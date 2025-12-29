@@ -1,6 +1,6 @@
 [package]
 name = "anput-spatial"
-version = "0.22.3"
+version = "0.23.0"
 edition = "2024"
 authors = ["Patryk 'PsichiX' Budzynski <psichix@gmail.com>"]
 description = "Spatial queries plugin for Anput ECS"
@@ -11,7 +11,7 @@ documentation = "https://docs.rs/anput-spatial"
 readme = "../../README.md"
 
 [dependencies]
-anput = { version = "0.22", path = "../_" }
+anput = { version = "0.23", path = "../_" }
 rstar = "0.12"
 
 [dev-dependencies]

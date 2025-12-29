@@ -9,8 +9,8 @@ default = ["tracing"]
 tracing = ["anput/tracing"]
 
 [dependencies]
-anput = { version = "0.22", path = "../crates/_" }
-anput-physics = { version = "0.22", path = "../crates/physics" }
+anput = { version = "0.23", path = "../crates/_" }
+anput-physics = { version = "0.23", path = "../crates/physics" }
 spitfire-core = "0.36"
 spitfire-glow = "0.36"
 spitfire-fontdue = "0.36"
