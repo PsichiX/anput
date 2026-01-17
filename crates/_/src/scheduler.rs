@@ -10,7 +10,10 @@ use crate::{
     world::{Relation, World},
 };
 use intuicio_data::managed::DynamicManaged;
-use moirai::jobs::{JobLocation, Jobs, ScopedJobs};
+use moirai::{
+    job::JobLocation,
+    jobs::{Jobs, ScopedJobs},
+};
 use std::{
     borrow::Cow,
     collections::HashSet,

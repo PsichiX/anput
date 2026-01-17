@@ -117,7 +117,7 @@ fn spawn_entities(c: &mut Criterion) {
         }
 
         b.iter(|| {
-            for (_, (pos, vel)) in world.query::<(&mut Position, &Velocity)>().iter() {
+            for (pos, vel) in world.query::<(&mut Position, &Velocity)>().iter() {
                 pos.0[0] += vel.0[0];
                 pos.0[1] += vel.0[1];
             }

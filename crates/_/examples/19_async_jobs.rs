@@ -3,7 +3,7 @@ use anput::{
     view::WorldView,
     world::{Relation, World},
 };
-use moirai::jobs::{JobLocation, Jobs};
+use moirai::{job::JobLocation, jobs::Jobs};
 use rand::{Rng, rng};
 use std::{collections::HashSet, error::Error};
 
