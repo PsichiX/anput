@@ -1,6 +1,6 @@
 [package]
 name = "anput-spatial"
-version = "0.23.1"
+version = "0.23.2"
 edition = "2024"
 authors = ["Patryk 'PsichiX' Budzynski <psichix@gmail.com>"]
 description = "Spatial queries plugin for Anput ECS"

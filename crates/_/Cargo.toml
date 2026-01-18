@@ -1,6 +1,6 @@
 [package]
 name = "anput"
-version = "0.23.1"
+version = "0.23.2"
 edition = "2024"
 authors = ["Patryk 'PsichiX' Budzynski <psichix@gmail.com>"]
 description = "Scriptable Entity-Component-System (powered by Intuicio)"
@@ -18,10 +18,10 @@ trace-changes = []
 
 [dependencies]
 moirai = "0.8"
-intuicio-data = "0.49"
-intuicio-core = "0.49"
-intuicio-derive = "0.49"
-intuicio-framework-serde = "0.49"
+intuicio-data = "0.51"
+intuicio-core = "0.51"
+intuicio-derive = "0.51"
+intuicio-framework-serde = "0.51"
 serde = { version = "1", features = ["derive"] }
 tracing = { version = "0.1", optional = true }
 
