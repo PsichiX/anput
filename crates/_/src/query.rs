@@ -45,6 +45,46 @@ impl std::fmt::Display for QueryError {
     }
 }
 
+pub trait TypedQueryFetch<'a, const LOCKING: bool> {
+    type Value;
+    type Access;
+
+    fn does_accept_archetype(archetype: &Archetype) -> bool;
+    fn access(archetype: &'a Archetype) -> Result<Self::Access, QueryError>;
+    fn fetch(access: &mut Self::Access) -> Option<Self::Value>;
+
+    #[allow(unused_variables)]
+    fn unique_access(output: &mut HashSet<TypeHash>) {}
+}
+
+pub trait TypedLookupFetch<'a, const LOCKING: bool> {
+    type Value;
+    type ValueOne;
+    type Access;
+
+    fn try_access(archetype: &'a Archetype) -> Option<Self::Access>;
+    fn fetch(access: &mut Self::Access, entity: Entity) -> Option<Self::Value>;
+    fn fetch_one(world: &'a World, entity: Entity) -> Option<Self::ValueOne>;
+
+    #[allow(unused_variables)]
+    fn unique_access(output: &mut HashSet<TypeHash>) {}
+}
+
+pub trait TypedRelationLookupFetch<'a> {
+    type Value;
+    type Access;
+
+    fn access(world: &'a World, entity: Entity) -> Self::Access;
+    fn fetch(access: &mut Self::Access) -> Option<Self::Value>;
+}
+
+pub trait TypedRelationLookupTransform<'a> {
+    type Input;
+    type Output;
+
+    fn transform(world: &'a World, input: Self::Input) -> impl Iterator<Item = Self::Output>;
+}
+
 pub struct Query<'a, const LOCKING: bool, Fetch: TypedQueryFetch<'a, LOCKING>>(
     PhantomData<fn() -> &'a Fetch>,
 );
@@ -103,7 +143,7 @@ impl<'a, const LOCKING: bool, Fetch: TypedQueryFetch<'a, LOCKING>> TypedLookupFe
     for Query<'a, LOCKING, Fetch>
 {
     type Value = ();
-    type ValueOne = Self::Value;
+    type ValueOne = ();
     type Access = ();
 
     fn try_access(archetype: &'a Archetype) -> Option<Self::Access> {
@@ -178,7 +218,7 @@ impl<'a, const LOCKING: bool, Fetch: TypedLookupFetch<'a, LOCKING>> TypedLookupF
     for Lookup<'a, LOCKING, Fetch>
 {
     type Value = ();
-    type ValueOne = Self::Value;
+    type ValueOne = ();
     type Access = ();
 
     fn try_access(archetype: &'a Archetype) -> Option<Self::Access> {
@@ -218,46 +258,6 @@ impl<'a, const LOCKING: bool, Fetch: TypedLookupFetch<'a, LOCKING>> TypedQueryFe
     }
 }
 
-pub trait TypedQueryFetch<'a, const LOCKING: bool> {
-    type Value;
-    type Access;
-
-    fn does_accept_archetype(archetype: &Archetype) -> bool;
-    fn access(archetype: &'a Archetype) -> Result<Self::Access, QueryError>;
-    fn fetch(access: &mut Self::Access) -> Option<Self::Value>;
-
-    #[allow(unused_variables)]
-    fn unique_access(output: &mut HashSet<TypeHash>) {}
-}
-
-pub trait TypedLookupFetch<'a, const LOCKING: bool> {
-    type Value;
-    type ValueOne;
-    type Access;
-
-    fn try_access(archetype: &'a Archetype) -> Option<Self::Access>;
-    fn fetch(access: &mut Self::Access, entity: Entity) -> Option<Self::Value>;
-    fn fetch_one(world: &'a World, entity: Entity) -> Option<Self::ValueOne>;
-
-    #[allow(unused_variables)]
-    fn unique_access(output: &mut HashSet<TypeHash>) {}
-}
-
-pub trait TypedRelationLookupFetch<'a> {
-    type Value;
-    type Access;
-
-    fn access(world: &'a World, entity: Entity) -> Self::Access;
-    fn fetch(access: &mut Self::Access) -> Option<Self::Value>;
-}
-
-pub trait TypedRelationLookupTransform<'a> {
-    type Input;
-    type Output;
-
-    fn transform(world: &'a World, input: Self::Input) -> impl Iterator<Item = Self::Output>;
-}
-
 impl<const LOCKING: bool> TypedQueryFetch<'_, LOCKING> for () {
     type Value = ();
     type Access = ();
@@ -277,7 +277,7 @@ impl<const LOCKING: bool> TypedQueryFetch<'_, LOCKING> for () {
 
 impl<const LOCKING: bool> TypedLookupFetch<'_, LOCKING> for () {
     type Value = ();
-    type ValueOne = Self::Value;
+    type ValueOne = ();
     type Access = ();
 
     fn try_access(_: &Archetype) -> Option<Self::Access> {
@@ -312,7 +312,7 @@ impl<'a, const LOCKING: bool> TypedQueryFetch<'a, LOCKING> for Entity {
 
 impl<'a, const LOCKING: bool> TypedLookupFetch<'a, LOCKING> for Entity {
     type Value = Entity;
-    type ValueOne = Self::Value;
+    type ValueOne = Entity;
     type Access = &'a EntityDenseMap;
 
     fn try_access(archetype: &'a Archetype) -> Option<Self::Access> {
