@@ -4,7 +4,7 @@ use anput::{
     world::{Relation, World},
 };
 use moirai::{job::JobLocation, jobs::Jobs};
-use rand::{Rng, rng};
+use rand::{RngExt, rng};
 use std::{collections::HashSet, error::Error};
 
 struct Next;

@@ -6,7 +6,7 @@ use anput::{
     universe::{Res, Universe},
 };
 use moirai::jobs::Jobs;
-use rand::{Rng, rng};
+use rand::{RngExt, rng};
 use std::error::Error;
 
 #[derive(Debug, Default, Clone, Copy)]

@@ -9,7 +9,7 @@ use anput::{
     world::World,
 };
 use moirai::jobs::Jobs;
-use rand::{Rng, rng};
+use rand::{RngExt, rng};
 use std::{
     error::Error,
     io::{Write, stdout},

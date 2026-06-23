@@ -5,7 +5,7 @@ use anput::{
     world::World,
 };
 use intuicio_derive::IntuicioStruct;
-use rand::{Rng, rng};
+use rand::{RngExt, rng};
 use serde::{Deserialize, Serialize};
 use std::error::Error;
 

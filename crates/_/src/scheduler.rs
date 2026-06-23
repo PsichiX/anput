@@ -656,21 +656,11 @@ mod tests {
             .system_setup(noop, |system| system.name("e").inject_into("a/b/c/d"));
         plugin.install(&mut world, &mut systems, &mut resources);
 
-        let a = systems
-            .find_with::<true, SystemName>(|name| name.as_str() == "a")
-            .unwrap();
-        let b = systems
-            .find_with::<true, SystemName>(|name| name.as_str() == "b")
-            .unwrap();
-        let c = systems
-            .find_with::<true, SystemName>(|name| name.as_str() == "c")
-            .unwrap();
-        let d = systems
-            .find_with::<true, SystemName>(|name| name.as_str() == "d")
-            .unwrap();
-        let e = systems
-            .find_with::<true, SystemName>(|name| name.as_str() == "e")
-            .unwrap();
+        let a = systems.find_by_path::<true>(["a"]).unwrap();
+        let b = systems.find_by_path::<true>(["b"]).unwrap();
+        let c = systems.find_by_path::<true>(["c"]).unwrap();
+        let d = systems.find_by_path::<true>(["d"]).unwrap();
+        let e = systems.find_by_path::<true>(["e"]).unwrap();
 
         assert!(systems.has_relation::<true, SystemGroupChild>(a, b));
         assert!(systems.has_relation::<true, SystemGroupChild>(b, c));

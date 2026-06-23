@@ -3,6 +3,7 @@ use crate::{
     component::Component,
     entity::Entity,
     query::{TypedLookupAccess, TypedLookupFetch, TypedQueryFetch, TypedQueryIter},
+    scheduler::{SystemGroupChild, SystemName},
     universe::{Res, Universe, UniverseCondition, UniverseFetch},
     world::{World, WorldError},
 };
@@ -313,5 +314,35 @@ impl Systems {
         f: impl Fn(&T) -> bool,
     ) -> Option<Entity> {
         self.world.find_with::<LOCKING, T>(f)
+    }
+
+    pub fn find_by_path<'a, const LOCKING: bool>(
+        &self,
+        path: impl IntoIterator<Item = &'a str>,
+    ) -> Option<Entity> {
+        let mut path = path.into_iter();
+        let part = path.next()?;
+        let mut entity = self
+            .world
+            .find_with::<LOCKING, SystemName>(|name| name.as_str() == part)?;
+        for part in path {
+            entity = self
+                .world
+                .relations_outgoing::<LOCKING, SystemGroupChild>(entity)
+                .find_map(|(_, _, to)| {
+                    if self
+                        .world
+                        .component::<LOCKING, SystemName>(to)
+                        .ok()?
+                        .as_str()
+                        == part
+                    {
+                        Some(to)
+                    } else {
+                        None
+                    }
+                })?;
+        }
+        Some(entity)
     }
 }

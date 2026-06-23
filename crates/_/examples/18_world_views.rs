@@ -1,5 +1,5 @@
 use anput::{view::TypedWorldView, world::World};
-use rand::{Rng, rng};
+use rand::{RngExt, rng};
 use std::{error::Error, thread::spawn};
 
 #[derive(Debug, Default, Clone, Copy, PartialEq)]

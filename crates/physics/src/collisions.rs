@@ -652,7 +652,7 @@ pub fn collect_contacts<const LOCKING: bool>(context: SystemContext) -> Result<(
     let tree = spatial.tree();
 
     for a in tree.iter() {
-        for b in tree.locate_in_envelope_intersecting(&a.envelope()) {
+        for b in tree.locate_in_envelope_intersecting(a.envelope()) {
             if a.data == b.data {
                 continue;
             }

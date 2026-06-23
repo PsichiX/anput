@@ -10,7 +10,7 @@ use crate::{
     },
 };
 use anput::{
-    scheduler::{GraphScheduler, GraphSchedulerPlugin, SystemName, SystemSubsteps},
+    scheduler::{GraphScheduler, GraphSchedulerPlugin, SystemSubsteps},
     third_party::{intuicio_data::managed::ManagedLazy, moirai::jobs::Jobs},
     universe::Universe,
 };
@@ -403,7 +403,7 @@ impl AppState<Vertex> for Game {
                 &self.universe,
                 self.universe
                     .systems
-                    .find_with::<true, SystemName>(|name| name.as_str() == "update")
+                    .find_by_path::<true>(["update"])
                     .unwrap(),
                 SystemSubsteps::default(),
             )
@@ -429,7 +429,7 @@ impl AppState<Vertex> for Game {
                     &self.universe,
                     self.universe
                         .systems
-                        .find_with::<true, SystemName>(|name| name.as_str() == "fixed-step-update")
+                        .find_by_path::<true>(["fixed-step-update"])
                         .unwrap(),
                     SystemSubsteps::default(),
                 )
@@ -454,7 +454,7 @@ impl AppState<Vertex> for Game {
                 &self.universe,
                 self.universe
                     .systems
-                    .find_with::<true, SystemName>(|name| name.as_str() == "draw-pixels")
+                    .find_by_path::<true>(["draw-pixels"])
                     .unwrap(),
                 SystemSubsteps::default(),
             )
@@ -486,7 +486,7 @@ impl AppState<Vertex> for Game {
                 &self.universe,
                 self.universe
                     .systems
-                    .find_with::<true, SystemName>(|name| name.as_str() == "draw-world")
+                    .find_by_path::<true>(["draw-world"])
                     .unwrap(),
                 SystemSubsteps::default(),
             )
@@ -514,7 +514,7 @@ impl AppState<Vertex> for Game {
                 &self.universe,
                 self.universe
                     .systems
-                    .find_with::<true, SystemName>(|name| name.as_str() == "draw-gui")
+                    .find_by_path::<true>(["draw-gui"])
                     .unwrap(),
                 SystemSubsteps::default(),
             )

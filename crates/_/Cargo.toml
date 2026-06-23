@@ -1,6 +1,6 @@
 [package]
 name = "anput"
-version = "0.23.3"
+version = "0.23.4"
 edition = "2024"
 authors = ["Patryk 'PsichiX' Budzynski <psichix@gmail.com>"]
 description = "Scriptable Entity-Component-System (powered by Intuicio)"
@@ -29,5 +29,5 @@ tracing = { version = "0.1", optional = true }
 instant = { version = "0.1", features = ["wasm-bindgen"] }
 
 [dev-dependencies]
-rand = "0.9"
+rand = "0.10"
 serde_json = "1"

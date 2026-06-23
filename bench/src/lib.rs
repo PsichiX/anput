@@ -1,4 +1,4 @@
-use rand::{Rng, rng};
+use rand::{RngExt, rng};
 
 #[derive(Clone, Copy)]
 pub struct FooDefault {

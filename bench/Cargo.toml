@@ -6,7 +6,7 @@ publish = false
 
 [dependencies]
 anput = { version = "*", path = "../crates/_" }
-rand = "0.9"
+rand = "0.10"
 ittapi = "0.5"
 
 [dev-dependencies]
