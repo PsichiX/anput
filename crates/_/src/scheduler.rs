@@ -149,10 +149,10 @@ impl Iterator for SystemSubstepsIter {
 pub struct GraphScheduler<const LOCKING: bool>;
 
 impl<const LOCKING: bool> GraphScheduler<LOCKING> {
-    pub fn maintenance(jobs: &Jobs, universe: &mut Universe) {
+    pub fn maintenance(jobs: &Jobs, universe: &mut Universe) -> Result<(), Box<dyn Error>> {
         jobs.run_local();
         universe.clear_changes();
-        universe.execute_commands::<LOCKING>();
+        universe.execute_commands::<LOCKING>()
     }
 
     pub fn run(&self, jobs: &Jobs, universe: &mut Universe) -> Result<(), Box<dyn Error>> {
@@ -162,8 +162,7 @@ impl<const LOCKING: bool> GraphScheduler<LOCKING> {
             Self::collect_roots(&universe.systems),
             SystemSubsteps::default(),
         )?;
-        Self::maintenance(jobs, universe);
-        Ok(())
+        Self::maintenance(jobs, universe)
     }
 
     pub fn run_systems(

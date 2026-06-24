@@ -5,22 +5,26 @@ use crate::{
     world::World,
 };
 use std::{
+    error::Error,
     marker::PhantomData,
     sync::{Arc, Mutex},
 };
 
 pub trait Command: Send + Sync + 'static {
-    fn execute(self, world: &mut World);
+    fn execute(self, world: &mut World) -> Result<(), Box<dyn Error>>;
 }
 
 #[derive(Default)]
 pub struct CommandBuffer {
     #[allow(clippy::type_complexity)]
-    commands: Vec<Box<dyn FnOnce(&mut World) + Send + Sync>>,
+    commands: Vec<Box<dyn FnOnce(&mut World) -> Result<(), Box<dyn Error>> + Send + Sync>>,
 }
 
 impl CommandBuffer {
-    pub fn schedule(&mut self, command: impl FnOnce(&mut World) + Send + Sync + 'static) {
+    pub fn schedule(
+        &mut self,
+        command: impl FnOnce(&mut World) -> Result<(), Box<dyn Error>> + Send + Sync + 'static,
+    ) {
         self.commands.push(Box::new(command));
     }
 
@@ -29,15 +33,14 @@ impl CommandBuffer {
     }
 
     pub fn commands(&mut self, mut buffer: CommandBuffer) {
-        self.schedule(move |world| {
-            buffer.execute(world);
-        });
+        self.schedule(move |world| buffer.execute(world));
     }
 
-    pub fn execute(&mut self, world: &mut World) {
+    pub fn execute(&mut self, world: &mut World) -> Result<(), Box<dyn Error>> {
         for command in std::mem::take(&mut self.commands) {
-            (command)(world);
+            (command)(world)?;
         }
+        Ok(())
     }
 
     pub fn clear(&mut self) {
@@ -87,8 +90,9 @@ impl<T: Bundle + Send + Sync + 'static> SpawnCommand<T> {
 }
 
 impl<T: Bundle + Send + Sync + 'static> Command for SpawnCommand<T> {
-    fn execute(self, world: &mut World) {
-        world.spawn(self.bundle).unwrap();
+    fn execute(self, world: &mut World) -> Result<(), Box<dyn Error>> {
+        world.spawn(self.bundle)?;
+        Ok(())
     }
 }
 
@@ -105,10 +109,11 @@ impl<T: Bundle + Send + Sync + 'static> SpawnManyCommand<T> {
 }
 
 impl<T: Bundle + Send + Sync + 'static> Command for SpawnManyCommand<T> {
-    fn execute(self, world: &mut World) {
+    fn execute(self, world: &mut World) -> Result<(), Box<dyn Error>> {
         for bundle in self.bundles {
-            world.spawn(bundle).unwrap();
+            world.spawn(bundle)?;
         }
+        Ok(())
     }
 }
 
@@ -123,8 +128,9 @@ impl DespawnCommand {
 }
 
 impl Command for DespawnCommand {
-    fn execute(self, world: &mut World) {
-        world.despawn(self.entity).unwrap();
+    fn execute(self, world: &mut World) -> Result<(), Box<dyn Error>> {
+        world.despawn(self.entity)?;
+        Ok(())
     }
 }
 
@@ -141,10 +147,11 @@ impl DespawnManyCommand {
 }
 
 impl Command for DespawnManyCommand {
-    fn execute(self, world: &mut World) {
+    fn execute(self, world: &mut World) -> Result<(), Box<dyn Error>> {
         for entity in self.entities {
-            world.despawn(entity).unwrap();
+            world.despawn(entity)?;
         }
+        Ok(())
     }
 }
 
@@ -160,8 +167,9 @@ impl<T: Bundle + Send + Sync + 'static> InsertCommand<T> {
 }
 
 impl<T: Bundle + Send + Sync + 'static> Command for InsertCommand<T> {
-    fn execute(self, world: &mut World) {
-        world.insert(self.entity, self.bundle).unwrap();
+    fn execute(self, world: &mut World) -> Result<(), Box<dyn Error>> {
+        world.insert(self.entity, self.bundle)?;
+        Ok(())
     }
 }
 
@@ -180,8 +188,9 @@ impl<T: Bundle + Send + Sync + 'static> RemoveCommand<T> {
 }
 
 impl<T: Bundle + Send + Sync + 'static> Command for RemoveCommand<T> {
-    fn execute(self, world: &mut World) {
-        world.remove::<T>(self.entity).unwrap();
+    fn execute(self, world: &mut World) -> Result<(), Box<dyn Error>> {
+        world.remove::<T>(self.entity)?;
+        Ok(())
     }
 }
 
@@ -198,10 +207,9 @@ impl<const LOCKING: bool, T: Component> RelateCommand<LOCKING, T> {
 }
 
 impl<const LOCKING: bool, T: Component> Command for RelateCommand<LOCKING, T> {
-    fn execute(self, world: &mut World) {
-        world
-            .relate::<LOCKING, T>(self.payload, self.from, self.to)
-            .unwrap();
+    fn execute(self, world: &mut World) -> Result<(), Box<dyn Error>> {
+        world.relate::<LOCKING, T>(self.payload, self.from, self.to)?;
+        Ok(())
     }
 }
 
@@ -218,10 +226,9 @@ impl<const LOCKING: bool, T: Component> RelateOneCommand<LOCKING, T> {
 }
 
 impl<const LOCKING: bool, T: Component> Command for RelateOneCommand<LOCKING, T> {
-    fn execute(self, world: &mut World) {
-        world
-            .relate_one::<LOCKING, T>(self.payload, self.from, self.to)
-            .unwrap();
+    fn execute(self, world: &mut World) -> Result<(), Box<dyn Error>> {
+        world.relate_one::<LOCKING, T>(self.payload, self.from, self.to)?;
+        Ok(())
     }
 }
 
@@ -244,15 +251,14 @@ impl<const LOCKING: bool, I: Component, O: Component> RelatePairCommand<LOCKING,
 }
 
 impl<const LOCKING: bool, I: Component, O: Component> Command for RelatePairCommand<LOCKING, I, O> {
-    fn execute(self, world: &mut World) {
-        world
-            .relate_pair::<LOCKING, I, O>(
-                self.payload_incoming,
-                self.payload_outgoing,
-                self.from,
-                self.to,
-            )
-            .unwrap();
+    fn execute(self, world: &mut World) -> Result<(), Box<dyn Error>> {
+        world.relate_pair::<LOCKING, I, O>(
+            self.payload_incoming,
+            self.payload_outgoing,
+            self.from,
+            self.to,
+        )?;
+        Ok(())
     }
 }
 
@@ -273,8 +279,9 @@ impl<const LOCKING: bool, T: Component> UnrelateCommand<LOCKING, T> {
 }
 
 impl<const LOCKING: bool, T: Component> Command for UnrelateCommand<LOCKING, T> {
-    fn execute(self, world: &mut World) {
-        world.unrelate::<LOCKING, T>(self.from, self.to).unwrap();
+    fn execute(self, world: &mut World) -> Result<(), Box<dyn Error>> {
+        world.unrelate::<LOCKING, T>(self.from, self.to)?;
+        Ok(())
     }
 }
 
@@ -298,12 +305,12 @@ mod tests {
         assert!(world.is_empty());
 
         buffer.command(SpawnCommand::new((1u8, 2u16, 3u32)));
-        buffer.execute(&mut world);
+        buffer.execute(&mut world).unwrap();
         assert_eq!(world.len(), 1);
 
         let entity = world.entities().next().unwrap();
         buffer.command(DespawnCommand::new(entity));
-        buffer.execute(&mut world);
+        buffer.execute(&mut world).unwrap();
         assert!(world.is_empty());
     }
 }

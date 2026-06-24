@@ -151,7 +151,8 @@ mod tests {
         ]
         .into_iter()
         .to_spawn_command()
-        .execute(&mut world);
+        .execute(&mut world)
+        .unwrap();
 
         // Read:
         let rows = world
@@ -180,7 +181,8 @@ mod tests {
             .filter(|(_, a)| **a > 0)
             .map(|(entity, _)| entity)
             .to_despawn_command()
-            .execute(&mut world);
+            .execute(&mut world)
+            .unwrap();
 
         let rows = world
             .query::<true, (&&str, &usize, &f32)>()

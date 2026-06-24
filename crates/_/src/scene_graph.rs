@@ -3,7 +3,7 @@ use crate::{
     bundle::{Bundle, BundleColumns},
     component::{Component, ComponentRef, ComponentRefMut},
     entity::Entity,
-    query::{TypedLookupFetch, TypedRelationLookupFetch},
+    query::{Lookup, Traverse, TypedLookupFetch, TypedRelationLookupFetch},
     world::{Relation, World, WorldError},
 };
 use intuicio_core::{context::Context, function::FunctionHandle, registry::Registry};
@@ -14,33 +14,89 @@ use intuicio_data::{
 };
 use std::collections::HashMap;
 
-pub use intuicio_core::function::Function as ActorMessageFunction;
+pub use intuicio_core::function::Function as SceneMessageFunction;
 
-pub struct ActorChild;
-pub struct ActorParent;
+pub struct SceneChild;
+pub struct SceneParent;
 
 #[derive(Debug, Default, Clone)]
-pub struct ActorMessageListeners(HashMap<String, FunctionHandle>);
+pub struct SceneMessageListeners(HashMap<String, FunctionHandle>);
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Actor(Entity);
+pub struct SceneNode(Entity);
 
-impl Actor {
+impl SceneNode {
+    /// # Safety
+    pub unsafe fn new(entity: Entity) -> Self {
+        Self(entity)
+    }
+
     pub fn spawn(
         world: &mut World,
         bundle: impl Bundle + Send + Sync + 'static,
     ) -> Result<Self, WorldError> {
         let entity = world.spawn((
-            ActorMessageListeners::default(),
-            Relation::<ActorChild>::default(),
-            Relation::<ActorParent>::default(),
+            SceneMessageListeners::default(),
+            Relation::<SceneChild>::default(),
+            Relation::<SceneParent>::default(),
         ))?;
         world.insert(entity, bundle)?;
         Ok(Self(entity))
     }
 
-    pub fn despawn(self, world: &mut World) -> Result<(), WorldError> {
+    pub fn spawn_child<const LOCKING: bool>(
+        self,
+        world: &mut World,
+        bundle: impl Bundle + Send + Sync + 'static,
+    ) -> Result<Self, WorldError> {
+        let child = Self::spawn(world, bundle)?;
+        self.add_child::<LOCKING>(world, child)?;
+        Ok(child)
+    }
+
+    pub fn despawn<const LOCKING: bool>(self, world: &mut World) -> Result<(), WorldError> {
+        for parent in self.parents::<LOCKING>(world).collect::<Vec<_>>() {
+            world.unrelate_pair::<LOCKING, SceneParent, SceneChild>(parent.0, self.0)?;
+        }
+        for child in self.children::<LOCKING>(world).collect::<Vec<_>>() {
+            world.unrelate_pair::<LOCKING, SceneParent, SceneChild>(self.0, child.0)?;
+        }
         world.despawn(self.0)
+    }
+
+    pub fn despawn_hierarchy_with_self<const LOCKING: bool>(
+        self,
+        world: &mut World,
+    ) -> Result<(), WorldError> {
+        for parent in self.parents::<LOCKING>(world).collect::<Vec<_>>() {
+            world.unrelate_pair::<LOCKING, SceneParent, SceneChild>(parent.0, self.0)?;
+        }
+        for entity in world
+            .traverse_outgoing::<LOCKING, SceneChild>([self.0])
+            .map(|(_, entity)| entity)
+            .collect::<Vec<_>>()
+        {
+            world.despawn(entity)?;
+        }
+        Ok(())
+    }
+
+    pub fn despawn_hierarchy<const LOCKING: bool>(
+        self,
+        world: &mut World,
+    ) -> Result<(), WorldError> {
+        for child in self.children::<LOCKING>(world).collect::<Vec<_>>() {
+            world.unrelate_pair::<LOCKING, SceneParent, SceneChild>(self.0, child.0)?;
+        }
+        for entity in world
+            .traverse_outgoing::<LOCKING, SceneChild>([self.0])
+            .skip(1)
+            .map(|(_, entity)| entity)
+            .collect::<Vec<_>>()
+        {
+            world.despawn(entity)?;
+        }
+        Ok(())
     }
 
     pub fn insert(
@@ -104,7 +160,7 @@ impl Actor {
         world: &mut World,
         other: Self,
     ) -> Result<(), WorldError> {
-        world.relate_pair::<LOCKING, _, _>(ActorParent, ActorChild, self.0, other.0)?;
+        world.relate_pair::<LOCKING, _, _>(SceneParent, SceneChild, self.0, other.0)?;
         Ok(())
     }
 
@@ -113,20 +169,52 @@ impl Actor {
         world: &mut World,
         other: Self,
     ) -> Result<(), WorldError> {
-        world.unrelate_pair::<LOCKING, ActorParent, ActorChild>(self.0, other.0)?;
+        world.unrelate_pair::<LOCKING, SceneParent, SceneChild>(self.0, other.0)?;
+        Ok(())
+    }
+
+    pub fn reparent<const LOCKING: bool>(
+        world: &mut World,
+        node: Self,
+        new_parent: Self,
+    ) -> Result<(), WorldError> {
+        for parent in node.parents::<LOCKING>(world).collect::<Vec<_>>() {
+            world.unrelate_pair::<LOCKING, SceneParent, SceneChild>(parent.0, node.0)?;
+        }
+        world.relate_pair::<LOCKING, _, _>(SceneParent, SceneChild, new_parent.0, node.0)?;
         Ok(())
     }
 
     pub fn children<const LOCKING: bool>(self, world: &World) -> impl Iterator<Item = Self> + '_ {
         world
-            .relations_outgoing::<LOCKING, ActorChild>(self.0)
+            .relations_outgoing::<LOCKING, SceneChild>(self.0)
             .map(|(_, _, entity)| Self(entity))
     }
 
     pub fn parents<const LOCKING: bool>(self, world: &World) -> impl Iterator<Item = Self> + '_ {
         world
-            .relations_outgoing::<LOCKING, ActorParent>(self.0)
+            .relations_outgoing::<LOCKING, SceneParent>(self.0)
             .map(|(_, _, entity)| Self(entity))
+    }
+
+    pub fn has_child<const LOCKING: bool>(self, world: &World, other: Self) -> bool {
+        world.has_relation::<LOCKING, SceneChild>(self.0, other.0)
+    }
+
+    pub fn has_parent<const LOCKING: bool>(self, world: &World, other: Self) -> bool {
+        world.has_relation::<LOCKING, SceneParent>(self.0, other.0)
+    }
+
+    pub fn traverse<'a, const LOCKING: bool, Relation, Fetch>(
+        self,
+        world: &'a World,
+    ) -> impl Iterator<Item = Fetch::ValueOne>
+    where
+        Relation: Component,
+        Fetch: TypedLookupFetch<'a, LOCKING> + 'a,
+    {
+        world
+            .relation_lookup::<LOCKING, Traverse<LOCKING, Relation, Lookup<LOCKING, Fetch>>>(self.0)
     }
 
     pub fn relation_lookup<'a, const LOCKING: bool, Fetch: TypedRelationLookupFetch<'a>>(
@@ -140,9 +228,9 @@ impl Actor {
         self,
         world: &World,
         id: impl ToString,
-        function: ActorMessageFunction,
+        function: SceneMessageFunction,
     ) -> Result<(), WorldError> {
-        let mut listeners = self.component_mut::<LOCKING, ActorMessageListeners>(world)?;
+        let mut listeners = self.component_mut::<LOCKING, SceneMessageListeners>(world)?;
         listeners.0.insert(id.to_string(), function.into_handle());
         Ok(())
     }
@@ -152,7 +240,7 @@ impl Actor {
         world: &World,
         id: &str,
     ) -> Result<(), WorldError> {
-        let mut listeners = self.component_mut::<LOCKING, ActorMessageListeners>(world)?;
+        let mut listeners = self.component_mut::<LOCKING, SceneMessageListeners>(world)?;
         listeners.0.remove(id);
         Ok(())
     }
@@ -162,7 +250,7 @@ impl Actor {
         world: &World,
         id: &str,
     ) -> Result<Option<FunctionHandle>, WorldError> {
-        let listeners = self.component::<LOCKING, ActorMessageListeners>(world)?;
+        let listeners = self.component::<LOCKING, SceneMessageListeners>(world)?;
         Ok(listeners.0.get(id).cloned())
     }
 
@@ -173,7 +261,7 @@ impl Actor {
         context: &mut Context,
         registry: &Registry,
     ) -> Result<(), WorldError> {
-        let listeners = self.component::<LOCKING, ActorMessageListeners>(world)?;
+        let listeners = self.component::<LOCKING, SceneMessageListeners>(world)?;
         if let Some(function) = listeners.0.get(id).cloned() {
             context.stack().push(DynamicManaged::new(self).unwrap());
             let lifetime = Lifetime::default();
@@ -192,7 +280,7 @@ impl Actor {
         registry: &Registry,
         inputs: I,
     ) -> Result<Option<O>, WorldError> {
-        let listeners = self.component::<LOCKING, ActorMessageListeners>(world)?;
+        let listeners = self.component::<LOCKING, SceneMessageListeners>(world)?;
         if let Some(function) = listeners.0.get(id).cloned() {
             inputs.stack_push_reversed(context.stack());
             context.stack().push(DynamicManaged::new(self).unwrap());
@@ -231,10 +319,7 @@ impl Actor {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use intuicio_core::{
-        transformer::{DynamicManagedValueTransformer, ValueTransformer},
-        types::struct_type::NativeStructBuilder,
-    };
+    use intuicio_core::transformer::{DynamicManagedValueTransformer, ValueTransformer};
     use intuicio_derive::intuicio_function;
 
     fn is_async<T: Send + Sync>() {}
@@ -250,24 +335,22 @@ mod tests {
     }
 
     #[intuicio_function(transformer = "DynamicManagedValueTransformer")]
-    fn attack(world: &World, this: Actor, other: Actor) {
+    fn attack(world: &World, this: SceneNode, other: SceneNode) {
         let this_attack = this.component::<true, Attack>(world).unwrap();
         let mut other_lives = other.component_mut::<true, Lives>(world).unwrap();
         other_lives.0 = other_lives.0.saturating_sub(this_attack.0);
     }
 
     #[test]
-    fn test_actor() {
-        is_async::<Actor>();
+    fn test_scene_node() {
+        is_async::<SceneNode>();
 
-        let registry = Registry::default()
-            .with_basic_types()
-            .with_type(NativeStructBuilder::new_uninitialized::<DynamicManaged>().build())
-            .with_type(NativeStructBuilder::new_uninitialized::<DynamicManagedRef>().build());
+        let registry = Registry::default().with_basic_types().with_erased_types();
         let mut context = Context::new(10240, 10240);
         let mut world = World::default();
 
-        let player = Actor::spawn(&mut world, ("player".to_owned(), Attack(2), Lives(1))).unwrap();
+        let player =
+            SceneNode::spawn(&mut world, ("player".to_owned(), Attack(2), Lives(1))).unwrap();
         player
             .register_message_listener::<true>(&world, "attack", attack::define_function(&registry))
             .unwrap();
@@ -275,7 +358,8 @@ mod tests {
         assert_eq!(player.component::<true, Attack>(&world).unwrap().0, 2);
         assert_eq!(player.component::<true, Lives>(&world).unwrap().0, 1);
 
-        let enemy = Actor::spawn(&mut world, ("enemy".to_owned(), Attack(1), Lives(2))).unwrap();
+        let enemy =
+            SceneNode::spawn(&mut world, ("enemy".to_owned(), Attack(1), Lives(2))).unwrap();
         assert!(enemy.exists(&world));
         assert_eq!(enemy.component::<true, Attack>(&world).unwrap().0, 1);
         assert_eq!(enemy.component::<true, Lives>(&world).unwrap().0, 2);
@@ -293,9 +377,9 @@ mod tests {
     }
 
     #[test]
-    fn test_actor_singleton() {
+    fn test_scene_node_singleton() {
         let mut world = World::default();
-        let resources = Actor::spawn(&mut world, (Counter::default(),)).unwrap();
+        let resources = SceneNode::spawn(&mut world, (Counter::default(),)).unwrap();
 
         for index in 0..5usize {
             world.spawn((index,)).unwrap();
@@ -311,5 +395,33 @@ mod tests {
         }
         assert_eq!(counter.odd, 2);
         assert_eq!(counter.even, 3);
+    }
+
+    #[test]
+    fn test_scene_node_hierarchy() {
+        let mut world = World::default();
+        let root = SceneNode::spawn(&mut world, ("root",)).unwrap();
+        let a = root.spawn_child::<true>(&mut world, ("a",)).unwrap();
+        let b = root.spawn_child::<true>(&mut world, ("b",)).unwrap();
+        let c = a.spawn_child::<true>(&mut world, ("c",)).unwrap();
+        let d = a.spawn_child::<true>(&mut world, ("d",)).unwrap();
+
+        assert!(root.exists(&world));
+        assert!(a.exists(&world));
+        assert!(b.exists(&world));
+        assert!(c.exists(&world));
+        assert!(d.exists(&world));
+
+        // d.despawn::<true>(&mut world).unwrap();
+        // assert!(!d.exists(&world));
+        // assert!(!a.has_child::<true>(&world, d));
+
+        root.despawn_hierarchy_with_self::<true>(&mut world)
+            .unwrap();
+        assert!(!root.exists(&world));
+        assert!(!a.exists(&world));
+        assert!(!b.exists(&world));
+        assert!(!c.exists(&world));
+        assert!(!d.exists(&world));
     }
 }

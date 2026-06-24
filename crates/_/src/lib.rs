@@ -1,4 +1,3 @@
-pub mod actor;
 pub mod archetype;
 pub mod bundle;
 pub mod commands;
@@ -12,6 +11,7 @@ pub mod prefab;
 pub mod processor;
 pub mod query;
 pub mod resources;
+pub mod scene_graph;
 pub mod scheduler;
 pub mod systems;
 pub mod universe;

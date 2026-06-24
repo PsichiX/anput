@@ -18,7 +18,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     {
         let mut commands = universe.resources.get_mut::<true, CommandBuffer>()?;
         commands.command(SpawnCommand::new((Villager,)));
-        commands.execute(&mut universe.simulation);
+        commands.execute(&mut universe.simulation).unwrap();
     }
 
     // Since changes from commands buffer are applied to the world, we can search for
@@ -34,7 +34,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     {
         let mut commands = universe.resources.get_mut::<true, CommandBuffer>()?;
         commands.command(DespawnCommand::new(villager));
-        commands.execute(&mut universe.simulation);
+        commands.execute(&mut universe.simulation).unwrap();
     }
 
     // Confirm villager no longer exists.

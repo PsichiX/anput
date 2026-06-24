@@ -1,6 +1,6 @@
 [package]
 name = "anput"
-version = "0.23.4"
+version = "0.24.0"
 edition = "2024"
 authors = ["Patryk 'PsichiX' Budzynski <psichix@gmail.com>"]
 description = "Scriptable Entity-Component-System (powered by Intuicio)"

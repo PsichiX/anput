@@ -111,16 +111,11 @@ pub fn control_bodies(context: SystemContext) -> Result<(), Box<dyn Error>> {
                         .unwrap();
                 }
             }
-            let object = world.spawn(bundle).unwrap();
-            world
-                .relate::<true, _>(BodyParentRelation, object, object)
-                .unwrap();
-            world
-                .relate::<true, _>(BodyDensityFieldRelation, object, object)
-                .unwrap();
-            world
-                .relate::<true, _>(BodyParticleRelation, object, object)
-                .unwrap();
+            let object = world.spawn(bundle)?;
+            world.relate::<true, _>(BodyParentRelation, object, object)?;
+            world.relate::<true, _>(BodyDensityFieldRelation, object, object)?;
+            world.relate::<true, _>(BodyParticleRelation, object, object)?;
+            Ok(())
         });
     }
 

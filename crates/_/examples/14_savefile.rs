@@ -89,7 +89,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     universe
         .resources
         .get_mut::<true, CommandBuffer>()?
-        .execute(&mut universe.simulation);
+        .execute(&mut universe.simulation)
+        .unwrap();
 
     // Print game state.
     for (entity, health, strength) in universe

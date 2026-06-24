@@ -392,13 +392,14 @@ impl Universe {
         self.systems.clear_changes();
     }
 
-    pub fn execute_commands<const LOCKING: bool>(&mut self) {
+    pub fn execute_commands<const LOCKING: bool>(&mut self) -> Result<(), Box<dyn Error>> {
         for commands in self.resources.query::<LOCKING, &mut CommandBuffer>() {
-            commands.execute(&mut self.simulation);
+            commands.execute(&mut self.simulation)?;
         }
         for commands in self.systems.query::<LOCKING, &mut CommandBuffer>() {
-            commands.execute(&mut self.simulation);
+            commands.execute(&mut self.simulation)?;
         }
+        Ok(())
     }
 }
 

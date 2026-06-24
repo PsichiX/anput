@@ -556,7 +556,7 @@ impl AppState<Vertex> for Game {
             )>()
             .unwrap();
 
-        GraphScheduler::<true>::maintenance(&self.jobs, &mut self.universe);
+        GraphScheduler::<true>::maintenance(&self.jobs, &mut self.universe).unwrap();
     }
 
     fn on_event(&mut self, event: Event<()>, _: &mut Window) -> bool {

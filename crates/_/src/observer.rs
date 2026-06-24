@@ -1,6 +1,6 @@
 use crate::{commands::CommandBuffer, component::Component, entity::Entity, world::World};
 use intuicio_data::type_hash::TypeHash;
-use std::collections::HashMap;
+use std::{collections::HashMap, error::Error};
 
 #[derive(Default)]
 pub struct ChangeObserver {
@@ -103,9 +103,9 @@ impl ChangeObserver {
         }
     }
 
-    pub fn process_execute(&mut self, world: &mut World) {
+    pub fn process_execute(&mut self, world: &mut World) -> Result<(), Box<dyn Error>> {
         self.process(world);
-        self.commands.execute(world);
+        self.commands.execute(world)
     }
 }
 
@@ -148,6 +148,7 @@ mod tests {
                 *data = !*data;
                 world.update::<bool>(entity);
                 *phase1.write().unwrap() = Phase::Added;
+                Ok(())
             });
         });
         observer.on_updated::<bool>(move |_, commands, entity| {
@@ -171,17 +172,17 @@ mod tests {
 
         observer.process(&mut world);
         world.clear_changes();
-        observer.commands.execute(&mut world);
+        observer.commands.execute(&mut world).unwrap();
         assert_eq!(*phase.read().unwrap(), Phase::Added);
 
         observer.process(&mut world);
         world.clear_changes();
-        observer.commands.execute(&mut world);
+        observer.commands.execute(&mut world).unwrap();
         assert_eq!(*phase.read().unwrap(), Phase::Updated);
 
         observer.process(&mut world);
         world.clear_changes();
-        observer.commands.execute(&mut world);
+        observer.commands.execute(&mut world).unwrap();
         assert_eq!(*phase.read().unwrap(), Phase::Removed);
     }
 }

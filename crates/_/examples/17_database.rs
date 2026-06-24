@@ -57,7 +57,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         .filter(|(_, health, _)| health.0 == 0)
         .map(|(entity, _, _)| entity)
         .to_despawn_command()
-        .execute(&mut universe.simulation);
+        .execute(&mut universe.simulation)
+        .unwrap();
 
     // Report alive monsters.
     for (name, _) in universe

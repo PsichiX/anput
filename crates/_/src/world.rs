@@ -106,13 +106,21 @@ impl std::fmt::Display for WorldError {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum EntitySlot {
+    Free,
+    Reserved,
+    /// Points to archetype id.
+    Alive(u32),
+}
+
 /// Manages the lifecycle of entities and maps them to archetypes.
 /// Tracks entities using a table and maintains reusable IDs to optimize performance.
 #[derive(Default)]
 struct EntityMap {
     id_generator: u32,
-    /// index is entity id, value is pair of generation and optional archetype id.
-    table: Vec<(u32, Option<u32>)>,
+    /// index is entity id, value is pair of generation and lifecycle slot.
+    table: Vec<(u32, EntitySlot)>,
     reusable: Vec<Entity>,
     size: usize,
 }
@@ -123,18 +131,18 @@ impl EntityMap {
         self.size == 0
     }
 
-    /// Returns the number of active entities in the map.
+    /// Returns the number of active entities.
     fn len(&self) -> usize {
         self.size
     }
 
-    /// Returns an iterator over all active entities.
+    /// Returns an iterator over all spawned entities.
     fn iter(&self) -> impl Iterator<Item = Entity> + '_ {
         self.table
             .iter()
             .enumerate()
-            .filter_map(|(id, (generation, archetype))| {
-                if archetype.is_some() {
+            .filter_map(|(id, (generation, slot))| {
+                if matches!(slot, EntitySlot::Alive(_)) {
                     Some(unsafe { Entity::new_unchecked(id as u32, *generation) })
                 } else {
                     None
@@ -150,19 +158,20 @@ impl EntityMap {
         self.size = 0;
     }
 
-    /// Acquires a new entity. Either reuses an entity ID from the pool or generates a new one.
+    /// Acquires a new reserved entity. Either reuses an entity ID from the pool or generates a new one.
     ///
     /// # Returns
-    /// * `Ok((entity, &mut Option<u32>))` - The newly acquired entity and a mutable reference
-    ///   to its associated archetype.
+    /// * `Ok((entity, &mut EntitySlot))` - The newly acquired entity and a mutable reference
+    ///   to its lifecycle slot.
     /// * `Err(WorldError::ReachedEntityIdCapacity)` - If the ID generator has reached its maximum capacity.
-    fn acquire(&mut self) -> Result<(Entity, &mut Option<u32>), WorldError> {
+    fn reserve(&mut self) -> Result<(Entity, &mut EntitySlot), WorldError> {
         if let Some(mut entity) = self.reusable.pop() {
-            let (generation, archetype) = &mut self.table[entity.id() as usize];
+            let (generation, slot) = &mut self.table[entity.id() as usize];
             entity = entity.bump_generation();
             *generation = entity.generation();
+            *slot = EntitySlot::Reserved;
             self.size += 1;
-            return Ok((entity, archetype));
+            return Ok((entity, slot));
         }
         if self.id_generator == u32::MAX {
             Err(WorldError::ReachedEntityIdCapacity)
@@ -173,29 +182,33 @@ impl EntityMap {
                 if self.table.len() == self.table.capacity() {
                     self.table.reserve_exact(self.table.capacity());
                 }
-                self.table.push((0, None));
+                self.table.push((0, EntitySlot::Free));
             }
-            let (_, archetype) = &mut self.table[id as usize];
+            let (_, slot) = &mut self.table[id as usize];
+            *slot = EntitySlot::Reserved;
             self.size += 1;
-            Ok((Entity::new(id, 0).unwrap(), archetype))
+            Ok((Entity::new(id, 0).unwrap(), slot))
         }
     }
 
     /// Releases an entity back into the reusable pool, if it exists.
     ///
     /// # Returns
-    /// * `Ok(u32)` - The archetype ID of the released entity.
+    /// * `Ok(Some(u32))` - The archetype ID of a released alive entity.
+    /// * `Ok(None)` - The released entity was only reserved.
     /// * `Err(WorldError::EntityDoesNotExists)` - If the entity does not exist or is already released.
-    fn release(&mut self, entity: Entity) -> Result<u32, WorldError> {
-        if let Some((generation, archetype)) = self.table.get_mut(entity.id() as usize) {
+    fn release(&mut self, entity: Entity) -> Result<Option<u32>, WorldError> {
+        if let Some((generation, slot)) = self.table.get_mut(entity.id() as usize) {
             if entity.generation() == *generation {
-                if let Some(archetype) = archetype.take() {
-                    self.reusable.push(entity);
-                    self.size -= 1;
-                    Ok(archetype)
-                } else {
-                    Err(WorldError::EntityDoesNotExists { entity })
-                }
+                let result = match *slot {
+                    EntitySlot::Alive(archetype) => Some(archetype),
+                    EntitySlot::Reserved => None,
+                    EntitySlot::Free => return Err(WorldError::EntityDoesNotExists { entity }),
+                };
+                *slot = EntitySlot::Free;
+                self.reusable.push(entity);
+                self.size -= 1;
+                Ok(result)
             } else {
                 Err(WorldError::EntityDoesNotExists { entity })
             }
@@ -204,15 +217,24 @@ impl EntityMap {
         }
     }
 
-    /// Retrieves the archetype ID for the given entity.
+    /// Returns `true` if the entity exists and is reserved.
+    fn is_reserved(&self, entity: Entity) -> bool {
+        if let Some((generation, slot)) = self.table.get(entity.id() as usize) {
+            entity.generation() == *generation && matches!(slot, EntitySlot::Reserved)
+        } else {
+            false
+        }
+    }
+
+    /// Retrieves the archetype ID for the given alive entity.
     ///
     /// # Returns
     /// * `Ok(u32)` - The archetype ID associated with the entity.
-    /// * `Err(WorldError::EntityDoesNotExists)` - If the entity does not exist or is invalid.
+    /// * `Err(WorldError::EntityDoesNotExists)` - If the entity does not exist or is not alive.
     fn get(&self, entity: Entity) -> Result<u32, WorldError> {
-        if let Some((generation, archetype)) = self.table.get(entity.id() as usize) {
+        if let Some((generation, slot)) = self.table.get(entity.id() as usize) {
             if entity.generation() == *generation {
-                if let Some(archetype) = *archetype {
+                if let EntitySlot::Alive(archetype) = *slot {
                     Ok(archetype)
                 } else {
                     Err(WorldError::EntityDoesNotExists { entity })
@@ -231,13 +253,14 @@ impl EntityMap {
     /// * `Ok(())` - If the operation is successful.
     /// * `Err(WorldError::EntityDoesNotExists)` - If the entity does not exist or is invalid.
     fn set(&mut self, entity: Entity, archetype_id: u32) -> Result<(), WorldError> {
-        if let Some((generation, archetype)) = self.table.get_mut(entity.id() as usize) {
+        if let Some((generation, slot)) = self.table.get_mut(entity.id() as usize) {
             if entity.generation() == *generation {
-                if let Some(archetype) = archetype.as_mut() {
-                    *archetype = archetype_id;
-                    Ok(())
-                } else {
-                    Err(WorldError::EntityDoesNotExists { entity })
+                match slot {
+                    EntitySlot::Reserved | EntitySlot::Alive(_) => {
+                        *slot = EntitySlot::Alive(archetype_id);
+                        Ok(())
+                    }
+                    EntitySlot::Free => Err(WorldError::EntityDoesNotExists { entity }),
                 }
             } else {
                 Err(WorldError::EntityDoesNotExists { entity })
@@ -821,6 +844,26 @@ impl World {
         self.entities.iter()
     }
 
+    pub fn reserve_entity(&mut self) -> Result<Entity, WorldError> {
+        Ok(self.entities.reserve()?.0)
+    }
+
+    pub fn reserve_entities(&mut self, count: usize) -> Result<Vec<Entity>, WorldError> {
+        let mut entities = Vec::with_capacity(count);
+        for _ in 0..count {
+            match self.entities.reserve() {
+                Ok((entity, _)) => entities.push(entity),
+                Err(error) => {
+                    for entity in entities {
+                        let _ = self.entities.release(entity);
+                    }
+                    return Err(error);
+                }
+            }
+        }
+        Ok(entities)
+    }
+
     #[inline]
     pub fn entity_by_index(&self, mut index: usize) -> Option<Entity> {
         for archetype in self.archetypes() {
@@ -959,10 +1002,10 @@ impl World {
             .iter()
             .map(|column| column.type_hash())
             .collect::<Vec<_>>();
-        let (entity, id) = self.entities.acquire()?;
+        let (entity, slot) = self.entities.reserve()?;
         let id = if let Some(archetype_id) = self.archetypes.find_by_columns_exact(&bundle_columns)
         {
-            *id = Some(archetype_id);
+            *slot = EntitySlot::Alive(archetype_id);
             archetype_id
         } else {
             let (archetype_id, archetype_slot) = match self.archetypes.acquire() {
@@ -980,7 +1023,7 @@ impl World {
                 }
             };
             *archetype_slot = Some(archetype);
-            *id = Some(archetype_id);
+            *slot = EntitySlot::Alive(archetype_id);
             archetype_id
         };
         let archetype = match self.archetypes.get_mut(id) {
@@ -1037,9 +1080,9 @@ impl World {
             .iter()
             .map(|column| column.type_hash())
             .collect::<Vec<_>>();
-        let (entity, id) = self.entities.acquire()?;
+        let (entity, slot) = self.entities.reserve()?;
         let id = if let Some(archetype_id) = self.archetypes.find_by_columns_exact(&columns) {
-            *id = Some(archetype_id);
+            *slot = EntitySlot::Alive(archetype_id);
             archetype_id
         } else {
             let (archetype_id, archetype_slot) = match self.archetypes.acquire() {
@@ -1057,7 +1100,7 @@ impl World {
                 }
             };
             *archetype_slot = Some(archetype);
-            *id = Some(archetype_id);
+            *slot = EntitySlot::Alive(archetype_id);
             archetype_id
         };
         let archetype = match self.archetypes.get_mut(id) {
@@ -1096,10 +1139,15 @@ impl World {
     }
 
     pub fn despawn(&mut self, entity: Entity) -> Result<(), WorldError> {
-        let id = self.entities.release(entity)?;
+        if self.entities.is_reserved(entity) {
+            self.entities.release(entity)?;
+            return Ok(());
+        }
+        let id = self.entities.get(entity)?;
         let archetype = self.archetypes.get_mut(id).unwrap();
         match archetype.remove(entity) {
             Ok(_) => {
+                self.entities.release(entity)?;
                 #[cfg(feature = "tracing")]
                 #[cfg(feature = "trace-changes")]
                 tracing::event!(
@@ -1119,19 +1167,21 @@ impl World {
                     .extend(archetype.columns().map(|column| column.type_hash()));
                 Ok(())
             }
-            Err(error) => {
-                self.entities.acquire()?;
-                Err(error.into())
-            }
+            Err(error) => Err(error.into()),
         }
     }
 
     /// # Safety
     pub unsafe fn despawn_uninitialized(&mut self, entity: Entity) -> Result<(), WorldError> {
-        let id = self.entities.release(entity)?;
+        if self.entities.is_reserved(entity) {
+            self.entities.release(entity)?;
+            return Ok(());
+        }
+        let id = self.entities.get(entity)?;
         let archetype = self.archetypes.get_mut(id).unwrap();
         match unsafe { archetype.remove_uninitialized(entity) } {
             Ok(_) => {
+                self.entities.release(entity)?;
                 #[cfg(feature = "tracing")]
                 #[cfg(feature = "trace-changes")]
                 tracing::event!(
@@ -1151,10 +1201,7 @@ impl World {
                     .extend(archetype.columns().map(|column| column.type_hash()));
                 Ok(())
             }
-            Err(error) => {
-                self.entities.acquire()?;
-                Err(error.into())
-            }
+            Err(error) => Err(error.into()),
         }
     }
 
@@ -1182,6 +1229,28 @@ impl World {
             .iter()
             .map(|column| column.type_hash())
             .collect::<Vec<_>>();
+        if self.entities.is_reserved(entity) {
+            let id = if let Some(archetype_id) =
+                self.archetypes.find_by_columns_exact(&bundle_columns)
+            {
+                archetype_id
+            } else {
+                let (archetype_id, archetype_slot) = self.archetypes.acquire()?;
+                let archetype =
+                    Archetype::new(bundle_columns.to_owned(), self.new_archetype_capacity)?;
+                *archetype_slot = Some(archetype);
+                archetype_id
+            };
+            let archetype = self.archetypes.get_mut(id)?;
+            archetype.insert(entity, bundle)?;
+            self.entities.set(entity, id)?;
+            self.added
+                .table
+                .entry(entity)
+                .or_default()
+                .extend(bundle_types);
+            return Ok(());
+        }
         let old_id = self.entities.get(entity)?;
         let mut new_columns = self
             .archetypes
@@ -2074,7 +2143,7 @@ mod tests {
         for entity in world.entities() {
             commands.command(DespawnCommand::new(entity));
         }
-        commands.execute(&mut world);
+        commands.execute(&mut world).unwrap();
         let mut list = world.removed().iter_of::<usize>().collect::<Vec<_>>();
         list.sort();
         assert_eq!(
@@ -2266,7 +2335,6 @@ mod tests {
         const N: usize = if cfg!(miri) { 10 } else { 10000 };
 
         let mut world = World::default().with_new_archetype_capacity(1);
-
         let entities = (0..N)
             .map(|_| world.spawn((A(0.0),)).unwrap())
             .collect::<Vec<_>>();
@@ -2278,5 +2346,44 @@ mod tests {
         for entity in &entities {
             world.remove::<(B,)>(*entity).unwrap();
         }
+    }
+
+    #[test]
+    fn test_reserved_entities_activation_and_release() {
+        let mut world = World::default();
+        let reserved = world.reserve_entities(2).unwrap();
+        assert_eq!(reserved.len(), 2);
+        assert!(world.entities().next().is_none());
+
+        world.insert(reserved[0], (1u8,)).unwrap();
+        world.insert(reserved[1], (2u8, 3u16)).unwrap();
+
+        let spawned = world.entities().collect::<Vec<_>>();
+        assert_eq!(spawned.len(), 2);
+        assert!(spawned.contains(&reserved[0]));
+        assert!(spawned.contains(&reserved[1]));
+        assert_eq!(*world.component::<true, u8>(reserved[0]).unwrap(), 1);
+        assert_eq!(*world.component::<true, u8>(reserved[1]).unwrap(), 2);
+        assert_eq!(*world.component::<true, u16>(reserved[1]).unwrap(), 3);
+
+        world.despawn(reserved[0]).unwrap();
+        assert!(world.component::<true, u8>(reserved[0]).is_err());
+
+        let reused = world.reserve_entities(1).unwrap();
+        assert_eq!(reused[0].id(), reserved[0].id());
+        assert!(reused[0].generation() > reserved[0].generation());
+    }
+
+    #[test]
+    fn test_despawn_reserved_entity() {
+        let mut world = World::default();
+        let entity = world.reserve_entities(1).unwrap().remove(0);
+
+        world.despawn(entity).unwrap();
+        assert!(world.insert(entity, (1u8,)).is_err());
+
+        let reused = world.reserve_entities(1).unwrap().remove(0);
+        assert_eq!(entity.id(), reused.id());
+        assert!(reused.generation() > entity.generation());
     }
 }
