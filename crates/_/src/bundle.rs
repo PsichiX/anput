@@ -200,7 +200,7 @@ impl BundleColumns for DynamicBundle {
                 ArchetypeColumnInfo::new_raw(
                     *component.type_hash(),
                     *component.layout(),
-                    component.finalizer(),
+                    component.finalizer().clone(),
                 )
             })
             .collect()

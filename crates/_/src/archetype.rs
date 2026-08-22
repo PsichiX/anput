@@ -4,7 +4,7 @@ use crate::{
     entity::{Entity, EntityDenseMap},
 };
 use intuicio_core::types::Type;
-use intuicio_data::{Finalize, non_zero_alloc, non_zero_dealloc, type_hash::TypeHash};
+use intuicio_data::{Finalize, Finalizer, non_zero_alloc, non_zero_dealloc, type_hash::TypeHash};
 use std::{
     alloc::Layout,
     error::Error,
@@ -95,11 +95,11 @@ impl std::fmt::Display for ArchetypeError {
     }
 }
 
-#[derive(Debug, Clone, Copy, Eq)]
+#[derive(Clone)]
 pub struct ArchetypeColumnInfo {
     type_hash: TypeHash,
     layout: Layout,
-    finalizer: unsafe fn(*mut ()),
+    finalizer: Finalizer,
 }
 
 impl ArchetypeColumnInfo {
@@ -107,16 +107,12 @@ impl ArchetypeColumnInfo {
         Self {
             type_hash: TypeHash::of::<T>(),
             layout: Layout::new::<T>().pad_to_align(),
-            finalizer: T::finalize_raw,
+            finalizer: Finalizer::of::<T>(),
         }
     }
 
     /// # Safety
-    pub unsafe fn new_raw(
-        type_hash: TypeHash,
-        layout: Layout,
-        finalizer: unsafe fn(*mut ()),
-    ) -> Self {
+    pub unsafe fn new_raw(type_hash: TypeHash, layout: Layout, finalizer: Finalizer) -> Self {
         Self {
             type_hash,
             layout: layout.pad_to_align(),
@@ -124,11 +120,11 @@ impl ArchetypeColumnInfo {
         }
     }
 
-    pub fn from_type(type_: &Type) -> Self {
+    pub fn from_type(type_: &Arc<Type>) -> Self {
         Self {
             type_hash: type_.type_hash(),
             layout: *type_.layout(),
-            finalizer: unsafe { type_.finalizer() },
+            finalizer: type_.finalizer(),
         }
     }
 
@@ -143,10 +139,21 @@ impl ArchetypeColumnInfo {
     }
 
     #[inline]
-    pub fn finalizer(&self) -> unsafe fn(*mut ()) {
-        self.finalizer
+    pub fn finalizer(&self) -> &Finalizer {
+        &self.finalizer
     }
 }
+
+impl std::fmt::Debug for ArchetypeColumnInfo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ArchetypeColumnInfo")
+            .field("type_hash", &self.type_hash)
+            .field("layout", &self.layout)
+            .finish()
+    }
+}
+
+impl Eq for ArchetypeColumnInfo {}
 
 impl PartialEq for ArchetypeColumnInfo {
     fn eq(&self, other: &Self) -> bool {
@@ -1070,7 +1077,7 @@ impl Clone for Column {
         Self {
             memory: self.memory,
             layout: self.layout,
-            info: self.info,
+            info: self.info.clone(),
             unique_access: self.unique_access.clone(),
             instances,
         }
@@ -1396,7 +1403,10 @@ impl Archetype {
         for access in access {
             for index in 0..access.size() {
                 unsafe {
-                    (access.info().finalizer())(access.data(index).unwrap().cast());
+                    access
+                        .info()
+                        .finalizer()
+                        .finalize(access.data(index).unwrap().cast());
                 }
             }
         }
@@ -1490,7 +1500,7 @@ impl Archetype {
         for column in self.columns.as_ref() {
             unsafe {
                 let target = column.memory.add(index * column.info.layout.size());
-                (column.info.finalizer)(target.cast());
+                column.info.finalizer.finalize(target.cast());
                 if self.size != index {
                     let source = column.memory.add(self.size * column.info.layout.size());
                     source.copy_to(target, column.info.layout.size());
@@ -1597,7 +1607,7 @@ impl Archetype {
         for column in to_finalize.columns.as_ref() {
             unsafe {
                 let data = column.memory.add(index_from * column.info.layout.size());
-                (column.info.finalizer)(data.cast());
+                column.info.finalizer.finalize(data.cast());
             }
         }
         if index_from < self.size {

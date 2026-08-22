@@ -8,6 +8,7 @@ use crate::{
     world::{World, WorldError},
 };
 use intuicio_core::{
+    Filter,
     context::Context,
     function::{FunctionHandle, FunctionQuery},
     registry::Registry,
@@ -138,7 +139,7 @@ impl<const LOCKING: bool> System for ScriptedObjectSystem<LOCKING> {
                 registry
                     .find_function(FunctionQuery {
                         name: Some(name.clone()),
-                        type_query: Some(TypeQuery {
+                        type_query: Filter::Matching(TypeQuery {
                             type_hash: Some(*self.object.type_hash()),
                             ..Default::default()
                         }),

@@ -288,7 +288,7 @@ impl Prefab {
                 .collect::<Result<Vec<_>, PrefabError>>()?;
             let column_info = column_types
                 .iter()
-                .map(|type_| ArchetypeColumnInfo::from_type(type_))
+                .map(ArchetypeColumnInfo::from_type)
                 .chain(additional_columns.iter().cloned())
                 .collect::<Vec<_>>();
             let rows_count = archetype
